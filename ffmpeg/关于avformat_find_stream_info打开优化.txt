@@ -31,8 +31,8 @@ static int add_to_pktbuf(AVPacketList **packet_buffer, AVPacket *pkt,
 
 void initVideoStream(AVFormatContext *formatCtx)
 {
-	//first set packet
-	AVPacket packet;
+    //first set packet
+    AVPacket packet;
     av_init_packet(&packet);
     while (true)
     {
@@ -42,12 +42,12 @@ void initVideoStream(AVFormatContext *formatCtx)
             break;
         }
     }
-	//这里要说明的就是新版中不能直接获取packet_buffer与packet_buffer_end了，需要找到ffmpeg源码中的libavformat/internal.h文件，
-	//将struct AVFormatInternal的定义声明一次，才能使用如下代码
-	add_to_pktbuf(&formatCtx->internal->packet_buffer,&packet,&formatCtx->internal->packet_buffer_end);
-	//设置相关参数，这里需要注意：width、height、pix_fmt，另外time_base与r_frame_rate参数st与avg_frame_rate设定，当然也可以手动指定。
-	AVStream *st = formatCtx->streams[0];
-	//Init the video codec(H264).
+    //这里要说明的就是新版中不能直接获取packet_buffer与packet_buffer_end了，需要找到ffmpeg源码中的libavformat/internal.h文件，
+    //将struct AVFormatInternal的定义声明一次，才能使用如下代码
+    add_to_pktbuf(&formatCtx->internal->packet_buffer,&packet,&formatCtx->internal->packet_buffer_end);
+    //设置相关参数，这里需要注意：width、height、pix_fmt，另外time_base与r_frame_rate参数st与avg_frame_rate设定，当然也可以手动指定。
+    AVStream *st = formatCtx->streams[0];
+    //Init the video codec(H264).
     //st->codec->codec_id = AV_CODEC_ID_H264;
     st->codec->width = 640;
     st->codec->height = 480;
@@ -56,15 +56,15 @@ void initVideoStream(AVFormatContext *formatCtx)
     //st->pts_wrap_bits = 32;
     st->codec->time_base.den = st->time_base.den;
     st->codec->time_base.num = st->time_base.num;
-	//st->codec->sample_fmt = AV_SAMPLE_FMT_NONE;
-	//st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
+    //st->codec->sample_fmt = AV_SAMPLE_FMT_NONE;
+    //st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     //st->time_base.den = 1000;
     //st->time_base.num = 1;
     st->r_frame_rate.den = st->avg_frame_rate.den;
     st->r_frame_rate.num = st->avg_frame_rate.num;
-	//st->avg_frame_rate.den = 2;
+    //st->avg_frame_rate.den = 2;
     //st->avg_frame_rate.num = 60;
-	//may be not need it！
+    //may be not need it！
 	formatCtx->pb->pos = (int64_t) formatCtx->pb->buf_end;
 }
 4.5 运行结果：
