@@ -1,14 +1,13 @@
-1.²âÊÔ»·¾³£ºvs2010¡¢ffmpeg3.3.1¡¢sdl2.0£¨sdlÓëÓÅ»¯ÎŞ¹Ø£©
-2.Ïà¹ØÎÄÕÂhttps://jiya.io/archives/vlc_optimize_1.html Óë http://blog.csdn.net/leo2007608/article/details/53421528
-3.»ùÓÚwin10²âÊÔ£¬Ö±½Ó²ÉÓÃffmpgÃüÁîÍÆËÍrtmpÁ÷£¬ÃüÁîÈçÏÂ,ÒÔH264±àÂë·½Ê½ÍÆËÍ×ÀÃæ×óÉÏ½Ç640x480ÇøÓòÖÁrtmp·şÎñÆ÷£º
+1.æµ‹è¯•ç¯å¢ƒï¼švs2010ã€ffmpeg3.3.1ã€sdl2.0ï¼ˆsdlä¸ä¼˜åŒ–æ— å…³ï¼‰
+2.ç›¸å…³æ–‡ç« https://jiya.io/archives/vlc_optimize_1.html ä¸ http://blog.csdn.net/leo2007608/article/details/53421528
+3.åŸºäºwin10æµ‹è¯•ï¼Œç›´æ¥é‡‡ç”¨ffmpgå‘½ä»¤æ¨é€rtmpæµï¼Œå‘½ä»¤å¦‚ä¸‹,ä»¥H264ç¼–ç æ–¹å¼æ¨é€æ¡Œé¢å·¦ä¸Šè§’640x480åŒºåŸŸè‡³rtmpæœåŠ¡å™¨ï¼š
 	ffmpeg -f gdigrab -video_size 640x480 -i desktop -vcode libx264 -preset:v ultrafast -tune:v zerolatency -f flv rtmp://192.168.1.201/live/mystream
-4.ÕûÌåË¼Â·²ÎÕÕÉÏÃæ¶şÆªÎÄÕÂ£¬µ«ÓĞ²»ÉÙ³öÈë£º
-4.1 ÔÚavformat_open_inputºó£¬²»²ÉÓÃavformat_find_stream_info£¬¶ø²ÉÓÃ×Ô¶¨Òåº¯Êı³õÊ¼»¯Á÷ĞÅÏ¢
-4.2 ÁíÍâÕâÀï½ö×öÁË²âÊÔÊÓÆµÁ÷µÄ²¿·Ö£¬ÒôÆµÁ÷ºóĞø²¹³äËµÃ÷
-4.3 ²âÊÔ·¢ÏÖĞèÒª¶ÔAVFormatContext¶ÔÏóÖĞµÄpacketBuffer½øĞĞ¸³Öµ²Ù×÷£¬·ñÔòÎŞ·¨²¥·ÅÊÓÆµ£¬¶øµ÷ÓÃav_read_frame»á»ñÈ¡Á÷ĞÅÏ¢£¬ËùÒÔÔÚÊµÏÖ¹ı³ÌÖĞ£¬¿ÉÒÔÊ¡ÂÔ²¿·Ö³õÊ¼»¯²Ù×÷¶ø½ö½ö¹Ø×¢Óë²¿·Ö²ÎÊıµÄÉè¶¨¡£
-4.4 »ùÓÚ4.3´úÂë¿´ÆğÀ´ÏñÊÇÕâÑùµÄ£º
-
-//add_to_pktbufº¯Êı¿ÉÒÔ²Î¿¼libavformat/utils.c
+4.æ•´ä½“æ€è·¯å‚ç…§ä¸Šé¢äºŒç¯‡æ–‡ç« ï¼Œä½†æœ‰ä¸å°‘å‡ºå…¥ï¼š
+4.1 åœ¨avformat_open_inputåï¼Œä¸é‡‡ç”¨avformat_find_stream_infoï¼Œè€Œé‡‡ç”¨è‡ªå®šä¹‰å‡½æ•°åˆå§‹åŒ–æµä¿¡æ¯
+4.2 å¦å¤–è¿™é‡Œä»…åšäº†æµ‹è¯•è§†é¢‘æµçš„éƒ¨åˆ†ï¼ŒéŸ³é¢‘æµåç»­è¡¥å……è¯´æ˜
+4.3 æµ‹è¯•å‘ç°éœ€è¦å¯¹AVFormatContextå¯¹è±¡ä¸­çš„packetBufferè¿›è¡Œèµ‹å€¼æ“ä½œï¼Œå¦åˆ™æ— æ³•æ’­æ”¾è§†é¢‘ï¼Œè€Œè°ƒç”¨av_read_frameä¼šè·å–æµä¿¡æ¯ï¼Œæ‰€ä»¥åœ¨å®ç°è¿‡ç¨‹ä¸­ï¼Œå¯ä»¥çœç•¥éƒ¨åˆ†åˆå§‹åŒ–æ“ä½œè€Œä»…ä»…å…³æ³¨ä¸éƒ¨åˆ†å‚æ•°çš„è®¾å®šã€‚
+4.4 åŸºäº4.3ä»£ç çœ‹èµ·æ¥åƒæ˜¯è¿™æ ·çš„ï¼š
+//add_to_pktbufå‡½æ•°å¯ä»¥å‚è€ƒlibavformat/utils.c
 static int add_to_pktbuf(AVPacketList **packet_buffer, AVPacket *pkt,
                          AVPacketList **plast_pktl)
 {
@@ -43,10 +42,10 @@ void initVideoStream(AVFormatContext *formatCtx)
             break;
         }
     }
-	//ÕâÀïÒªËµÃ÷µÄ¾ÍÊÇĞÂ°æÖĞ²»ÄÜÖ±½Ó»ñÈ¡packet_bufferÓëpacket_buffer_endÁË£¬ĞèÒªÕÒµ½ffmpegÔ´ÂëÖĞµÄlibavformat/internal.hÎÄ¼ş£¬
-	//½«struct AVFormatInternalµÄ¶¨ÒåÉùÃ÷Ò»´Î£¬²ÅÄÜÊ¹ÓÃÈçÏÂ´úÂë
+	//è¿™é‡Œè¦è¯´æ˜çš„å°±æ˜¯æ–°ç‰ˆä¸­ä¸èƒ½ç›´æ¥è·å–packet_bufferä¸packet_buffer_endäº†ï¼Œéœ€è¦æ‰¾åˆ°ffmpegæºç ä¸­çš„libavformat/internal.hæ–‡ä»¶ï¼Œ
+	//å°†struct AVFormatInternalçš„å®šä¹‰å£°æ˜ä¸€æ¬¡ï¼Œæ‰èƒ½ä½¿ç”¨å¦‚ä¸‹ä»£ç 
 	add_to_pktbuf(&formatCtx->internal->packet_buffer,&packet,&formatCtx->internal->packet_buffer_end);
-	//ÉèÖÃÏà¹Ø²ÎÊı£¬ÕâÀïĞèÒª×¢Òâ£ºwidth¡¢height¡¢pix_fmt£¬ÁíÍâtime_baseÓër_frame_rate²ÎÊıstÓëavg_frame_rateÉè¶¨£¬µ±È»Ò²¿ÉÒÔÊÖ¶¯Ö¸¶¨¡£
+	//è®¾ç½®ç›¸å…³å‚æ•°ï¼Œè¿™é‡Œéœ€è¦æ³¨æ„ï¼šwidthã€heightã€pix_fmtï¼Œå¦å¤–time_baseä¸r_frame_rateå‚æ•°stä¸avg_frame_rateè®¾å®šï¼Œå½“ç„¶ä¹Ÿå¯ä»¥æ‰‹åŠ¨æŒ‡å®šã€‚
 	AVStream *st = formatCtx->streams[0];
 	//Init the video codec(H264).
     //st->codec->codec_id = AV_CODEC_ID_H264;
@@ -65,11 +64,11 @@ void initVideoStream(AVFormatContext *formatCtx)
     st->r_frame_rate.num = st->avg_frame_rate.num;
 	//st->avg_frame_rate.den = 2;
     //st->avg_frame_rate.num = 60;
-	//may be not need it£¡
+	//may be not need itï¼
 	formatCtx->pb->pos = (int64_t) formatCtx->pb->buf_end;
 }
-4.5 ÔËĞĞ½á¹û£º
-===ÓÅ»¯Ç°===
+4.5 è¿è¡Œç»“æœï¼š
+===ä¼˜åŒ–å‰===
 ==========>begin avformat_open_input : 0.000s
 Metadata:
   Server                NGINX RTMP (github.com/arut/nginx-rtmp-module)
@@ -99,7 +98,7 @@ Input #0, live_flv, from 'rtmp://192.168.1.201/live/mystream':
     Stream #0:0: Video: h264 (High 4:4:4 Predictive), yuv444p(progressive), 640x480, 54 fps, 54 tbr, 1k tbn, 108 tbc
 ------------------------------------------------
 
-===ÓÅ»¯ºó===
+===ä¼˜åŒ–å===
 ==========>begin avformat_open_input : 0.000s
 Metadata:
   Server                NGINX RTMP (github.com/arut/nginx-rtmp-module)
@@ -128,5 +127,5 @@ Input #0, live_flv, from 'rtmp://192.168.1.201/live/mystream':
   Duration: 00:00:00.00, start: 0.000000, bitrate: N/A
     Stream #0:0: Video: h264, none, 54 fps, 54 tbr, 1k tbn, 1k tbc
 ------------------------------------------------
-4.5.1 ¹ØÓÚStreamĞÅÏ¢µÄ²îÒì²¿·Ö£¬´ıĞø¡£
+4.5.1 å…³äºStreamä¿¡æ¯çš„å·®å¼‚éƒ¨åˆ†ï¼Œå¾…ç»­ã€‚
 
