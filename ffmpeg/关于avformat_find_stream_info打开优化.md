@@ -1,3 +1,5 @@
+```cpp
+/*
 	测试环境：vs2010、ffmpeg3.3.1、sdl2.0（sdl与优化无关）
 	
 	相关文章https://jiya.io/archives/vlc_optimize_1.html 与 http://blog.csdn.net/leo2007608/article/details/53421528
@@ -12,7 +14,7 @@
 	调用av_read_frame会获取流信息，所以在实现过程中，可以省略部分初始化操作而仅仅关注与部分参数的设定。
 	
 	基于上面分析代码看起来像是这样的：
-```cpp
+*/
 	//add_to_pktbuf函数可以参考libavformat/utils.c
 	static int add_to_pktbuf(AVPacketList **packet_buffer, AVPacket *pkt,
                          AVPacketList **plast_pktl)
