@@ -140,4 +140,4 @@
 	4.5.1 关于Stream信息的差异部分，待续。
 	
 
-[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/zDemo1.md)
+[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/demo/1.md)
