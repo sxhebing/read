@@ -1,3 +1,4 @@
+
 ```cpp
 /*
 	测试环境：vs2010、ffmpeg3.3.1、sdl2.0（sdl与优化无关）
@@ -137,5 +138,6 @@
 		Stream #0:0: Video: h264, none, 54 fps, 54 tbr, 1k tbn, 1k tbc
 	------------------------------------------------
 	4.5.1 关于Stream信息的差异部分，待续。
-	[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/1.md)
+	
 
+[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/zDemo1.md)
