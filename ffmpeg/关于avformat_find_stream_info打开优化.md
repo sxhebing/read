@@ -270,7 +270,7 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 }
 ```
 	//优化后，二种方案相比差别不大，其实质都是需要先获取到一个视频帧，区别在于一个读取视频帧，一个读取视频的flv tag
-	//测试结果波动很大：时间从0.588s - 6.987s 或更多不等（fuck bad network）
+	//测试结果波动很大：时间从0.588s - ??? ，原因可以看上面的解释
 
 	==========>begin avformat_open_input : 0.000s
 	Metadata:
