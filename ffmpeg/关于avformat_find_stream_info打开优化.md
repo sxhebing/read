@@ -45,7 +45,9 @@ static AVPacket *add_to_pktbuf(AVPacketList **packet_buffer, AVPacket *pkt, AVPa
     pktl->pkt   = *pkt;
     return &pktl->pkt;
 }
-//Audio+Video:    ffmpeg -f dshow -i audio="FrontMic (Realtek High Definition Audio)" -f gdigrab -video_size 640x480 -i desktop  -vcodec libx264 -codec:a aac -pix_fmt yuv420p -tune zerolatency -preset ultrafast -f flv rtmp://192.168.1.201/live/mystream
+//Audio+Video:  ffmpeg -f dshow -i audio="FrontMic (Realtek High Definition Audio)" -f gdigrab 
+//		-video_size 640x480 -i desktop  -vcodec libx264 -codec:a aac -pix_fmt yuv420p 
+//		-tune zerolatency -preset ultrafast -f flv rtmp://192.168.1.201/live/mystream
 void init_Stream1(AVFormatContext *formatCtx, int64_t start)
 {
     /*
