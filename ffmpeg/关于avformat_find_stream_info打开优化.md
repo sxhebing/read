@@ -269,67 +269,35 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
     at->time_base.num = 1;
 }
 ```
-	运行结果：
-	优化前
-	==========>begin avformat_open_input : 0.000s
-	Metadata:
-	  Server                NGINX RTMP (github.com/arut/nginx-rtmp-module)
-	  width                 640.00
-	  height                480.00
-	  displayWidth          640.00
-	  displayHeight         480.00
-	  duration              0.00
-	  framerate             54.00
-	  fps                   54.00
-	  videodatarate         0.00
-	  videocodecid          7.00
-	  audiodatarate         0.00
-	  audiocodecid          0.00
-	==========>begin find stream info : 1.585s
-	==========>after find stream info :10.598s
-	----------------File Information----------------
-	Input #0, live_flv, from 'rtmp://192.168.1.201/live/mystream':
-	  Metadata:
-		Server          : NGINX RTMP (github.com/arut/nginx-rtmp-module)
-		displayWidth    : 640
-		displayHeight   : 480
-		fps             : 54
-		profile         :
-		level           :
-	  Duration: 00:00:00.00, start: 19596.407000, bitrate: N/A
-		Stream #0:0: Video: h264 (High 4:4:4 Predictive), yuv444p(progressive), 640x480, 54 fps, 54 tbr, 1k tbn, 108 tbc
-	------------------------------------------------
+//优化后，二种方案相比差别不大，其实质都是需要先获取到一个视频帧，区别在于一个读取视频帧，一个读取视频的flv tag
+//测试结果波动很大：时间从0.588s - 6.987s 或更多不等（fuck bad network）
 
-	优化后
-	==========>begin avformat_open_input : 0.000s
-	Metadata:
-	  Server                NGINX RTMP (github.com/arut/nginx-rtmp-module)
-	  width                 640.00
-	  height                480.00
-	  displayWidth          640.00
-	  displayHeight         480.00
-	  duration              0.00
-	  framerate             54.00
-	  fps                   54.00
-	  videodatarate         0.00
-	  videocodecid          7.00
-	  audiodatarate         0.00
-	  audiocodecid          0.00
-	==========>begin find stream info : 1.716s
-	==========>after find stream info :1.716s
-	----------------File Information----------------
-	Input #0, live_flv, from 'rtmp://192.168.1.201/live/mystream':
-	  Metadata:
-		Server          : NGINX RTMP (github.com/arut/nginx-rtmp-module)
-		displayWidth    : 640
-		displayHeight   : 480
-		fps             : 54
-		profile         :
-		level           :
-	  Duration: 00:00:00.00, start: 0.000000, bitrate: N/A
-		Stream #0:0: Video: h264, none, 54 fps, 54 tbr, 1k tbn, 1k tbc
-	------------------------------------------------
-	4.5.1 关于Stream信息的差异部分，待续。
+==========>begin avformat_open_input : 0.000s
+Metadata:
+  Server                NGINX RTMP (github.com/arut/nginx-rtmp-module)
+  width                 640.00
+  height                480.00
+  displayWidth          640.00
+  displayHeight         480.00
+  duration              0.00
+  framerate             30.00
+  fps                   30.00
+  videodatarate         0.00
+  videocodecid          7.00
+  audiodatarate         125.00
+  audiocodecid          10.00
+==========>begin find stream info 1: 0.378s
+==========>begin find get_video_extradata: 0.379s
+find video flv tag success 43.
+get_video_extradata ret = 0
+==========>after find get_video_extradata: 0.588s
+==========>after find stream info :0.588s
+----------------File Information----------------
+Input #0, live_flv, from 'rtmp://192.168.1.201/live/mystream':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+    Stream #0:0: Video: h264, none, 30 fps, 30 tbr, 1k tbn, 1k tbc
+    Stream #0:1: Audio: aac, 44100 Hz, stereo, 128 kb/s
+------------------------------------------------
 	
 
 [Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/demo/1.md)
