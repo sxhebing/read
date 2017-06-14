@@ -299,5 +299,18 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 		Stream #0:1: Audio: aac, 44100 Hz, stereo, 128 kb/s
 	------------------------------------------------
 
+	补充说明：
+	Stream #0:0: Video: h264 (High), yuv420p(progressive), 480x288 [SAR 16:15 DAR 16:9], 25 fps, 25 tbr, 1k tbn, 50 tbc
+	1. 0:0 实时流的索引:音视频等流的序号
+	2. Video 即 st->codecpar->codec_type 流类型
+	3. h264 (High) 即 st->codecpar->codec_id、st->codecpar->profile、st->codecpar->level 编码
+	4. yuv420p(progressive)即 st->codecpar->format、st->codecpar->field_order 图片格式
+	5. 480x288 图像大小
+	6. [SAR 16:15 DAR 16:9] 即 st->sample_aspect_ratio、st->codecpar->sample_aspect_ratio、st->codecpar->width、
+		st->codecpar->height 像素宽高比
+	7. 25 fps 即 st->avg_frame_rate	平均帧率
+	8. 25 tbr 即 st->r_frame_rate		帧率
+	9. 1k tbn 即 st->time_base			流时间精度
+	10.50 tbc 即 st->codec->time_base 	视频时间精度
 
 [Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/demo/1.md)
