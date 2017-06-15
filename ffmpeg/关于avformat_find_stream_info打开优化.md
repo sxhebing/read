@@ -313,4 +313,4 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 	9. 1k tbn 即 st->time_base			流时间精度
 	10.50 tbc 即 st->codec->time_base 	视频时间精度
 
-[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/demo/1.md)
+[Demo](https://github.com/sxhebing/read/blob/master/ffmpeg/demo/1.cpp)
