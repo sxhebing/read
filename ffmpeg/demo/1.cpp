@@ -1,4 +1,3 @@
-```cpp
 //avformat_find_stream_info优化简易demo，测试 H264 + AAC RTMP直播流
 //
 
@@ -641,4 +640,3 @@ int _tmain(int argc, char* argv[])
 
     return 0;
 }
-```
