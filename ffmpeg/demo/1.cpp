@@ -1,43 +1,112 @@
 //avformat_find_stream_info优化简易demo，测试 H264 + AAC RTMP直播流
-//
+//测试rtmp://live.hkstv.hk.lxdns.com/live/hks
 
 #include "stdafx.h"
+
+#define __STDC_CONSTANT_MACROS
+
+#ifdef _WIN32
+//Windows
+extern "C"
+{
+#include <libavcodec\avcodec.h>
+#include <libavformat\avformat.h>
+#include <libswscale\swscale.h>
+#include <libavutil\imgutils.h>
+#include <libavutil\time.h>
+#include <libavutil\avutil.h>
+#include <libsdl\SDL.h>
+#include <libswresample\swresample.h>
+#include <libavdevice\avdevice.h>
+}
+#else
+//Linux
+#endif
+
 #include <libavformat/internal.h>
 #define GET_ARRAY_LEN(array,len) {len = (sizeof(array) / sizeof(array[0]));}
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
+
+typedef struct _AVPacketQueue{
+    AVPacket *cur;
+    struct _AVPacketQueue *next;
+}AVPacketQueue;
+
+typedef struct _AVFrameQueue{
+    AVFrame *cur;
+    struct _AVFrameQueue *next;
+}AVFrameQueue;
+
+typedef struct SimplePlayer{
+    //decode context
+    AVFormatContext *formatCtx;
+    //packet for decode
+    AVPacket *packet;
+
+    /*for video decode*/
+    AVCodecContext *vCodecCtx;
+    AVCodec *vCodec;
+    AVFrame *vFrame,*vFrameYUV;
+    struct SwsContext *img_convert_ctx;
+    /*for audio decode*/
+    AVCodecContext *aCodecCtx;
+    AVCodec *aCodec;
+    AVFrame *aFrame;  
+    struct SwrContext *au_convert_ctx;
+    Uint8 *out_buffer;
+
+    //stream index
+    int videoIndex;
+    int audioIndex;
+
+    //Out params for Video
+    AVPixelFormat vFormat;
+    //Out params for Audio
+    uint64_t out_channel_layout;
+    int out_nb_samples;
+    AVSampleFormat out_sample_fmt;
+    int out_sample_rate;
+    int out_channels;
+    int out_buffer_size;
+
+    //play flag
+    int exit;
+    int pause;
+    int64_t start;
+
+    //queue
+    AVPacketQueue *videoPkts;
+    AVPacketQueue *audioPkts;
+    AVFrameQueue *videoFrame;
+    AVFrameQueue *audioFrame;
+
+    //thread
+    SDL_Thread *decVideo;
+    SDL_Thread *decAudio;
+    SDL_Thread *playVideo;
+    SDL_Thread *playAudio;
+    SDL_Thread *read;
+    SDL_mutex *pktMutex;
+    SDL_mutex *decAudioMutex;
+
+    //SDL
+    int screen_w,screen_h;
+    SDL_Window *screen;
+    SDL_Renderer* sdlRenderer;
+    SDL_Texture* sdlTexture;
+    SDL_Rect sdlRect;
+ 
+    SDL_Event event;
+    //add Audio
+    SDL_AudioSpec audioSpec;
+    //SDL end
+
+}SimplePlayer;
 
 //SDL beign
 //Refresh Event
 #define SFM_REFRESH_EVENT (SDL_USEREVENT + 1)
 #define SFM_BREAK_EVENT (SDL_USEREVENT + 2)
-
-int thread_exit = 0;
-int thread_pause = 0;
-
-int sfp_refresh_thread(void *opaque)
-{
-    thread_exit = 0;
-    thread_pause = 0;
-
-    while(!thread_exit)
-    {
-        if(!thread_pause)
-        {
-            SDL_Event event;
-            event.type = SFM_REFRESH_EVENT;
-            SDL_PushEvent(&event);
-        }
-        SDL_Delay(1);
-    }
-    thread_exit = 0;
-    thread_pause = 0;
-    //break
-    SDL_Event event;
-    event.type = SFM_BREAK_EVENT;
-    SDL_PushEvent(&event);
-    return 0;
-}
-//SDL end
 
 //Audio begin
 static Uint8 *audio_chunk;
@@ -64,6 +133,154 @@ void  fill_audio(void *udata,Uint8 *stream,int len){
 } 
 //Audio end
 
+AVPacket * get_packet(SimplePlayer *sp,bool video){
+    SDL_LockMutex(sp->pktMutex);
+    AVPacket *pkt = video ? sp->videoPkts->cur : sp->audioPkts->cur;
+    if(pkt == NULL){
+        SDL_UnlockMutex(sp->pktMutex);
+        return NULL;
+    }
+    AVPacketQueue *old = video ? sp->videoPkts : sp->audioPkts;
+    if(old->next){
+        if(video){
+            sp->videoPkts = old->next;
+        }else{
+            sp->audioPkts = old->next;
+        }
+        av_free(old);
+    }else{
+        old->cur = NULL;
+    }
+    SDL_UnlockMutex(sp->pktMutex);
+    return pkt;
+}
+
+void add_packet(AVPacketQueue *tag,AVPacket *pkt){
+    if(tag->cur == NULL){
+        tag->cur = av_packet_clone(pkt);
+        tag->next = NULL;
+        return;
+    }
+    AVPacketQueue *pktq = (AVPacketQueue *)av_malloc(sizeof(AVPacketQueue));
+    pktq->cur = av_packet_clone(pkt);
+    pktq->next = NULL;
+    
+    //max packets in queue?
+    while(tag->next != NULL){
+        tag = tag->next;
+    }
+    tag->next = pktq;
+}
+
+int read_thread(void *opaque)
+{
+    SimplePlayer *sp = (SimplePlayer *)opaque;
+
+    while(sp && !sp->exit)
+    {
+        if(!sp->pause)
+        {
+            if(av_read_frame(sp->formatCtx,sp->packet) < 0)
+            {
+                sp->exit = 1;
+                continue;
+            }
+            if(sp->packet->stream_index == sp->videoIndex){
+                SDL_LockMutex(sp->pktMutex);
+                //printf("put video %d \n",sp->packet->size);
+                add_packet(sp->videoPkts,sp->packet);
+                SDL_UnlockMutex(sp->pktMutex);
+            }else if(sp->packet->stream_index == sp->audioIndex){
+                SDL_LockMutex(sp->pktMutex);
+                add_packet(sp->audioPkts,sp->packet);
+                SDL_UnlockMutex(sp->pktMutex);
+            }
+            av_free_packet(sp->packet);
+        }
+        SDL_Delay(1);
+    }
+
+    //SDL_DestroyMutex(sp->decAudioMutex);
+    //break
+    SDL_Event event;
+    event.type = SFM_BREAK_EVENT;
+    SDL_PushEvent(&event);
+    return 0;
+}
+
+int read_video_thread(void *opaque)
+{
+    int ret,got;
+    SimplePlayer *sp = (SimplePlayer *)opaque;
+    while(sp && !sp->exit)
+    {
+        if(!sp->pause)
+        {
+           AVPacket *pkt = get_packet(sp,1);
+           if(pkt){
+               //printf("get video %lld - %lld - %lld \n",pkt->dts,pkt->pts,pkt->duration);
+               ret = avcodec_decode_video2(sp->vCodecCtx,sp->vFrame,&got,pkt);
+               if(ret < 0)
+               {
+                   printf("Decode Error %d for %d.\n",ret,pkt->size);
+                   return -1;
+               }
+               if(got)
+               {
+                   sws_scale(sp->img_convert_ctx,sp->vFrame->data,sp->vFrame->linesize,
+                       0,sp->vCodecCtx->height,sp->vFrameYUV->data,sp->vFrameYUV->linesize);
+
+                   //SDL begin
+                   SDL_UpdateTexture(sp->sdlTexture,NULL,sp->vFrameYUV->data[0],sp->vFrameYUV->linesize[0]);
+                   SDL_RenderClear(sp->sdlRenderer);
+                   SDL_RenderCopy(sp->sdlRenderer,sp->sdlTexture,NULL,&sp->sdlRect);
+                   SDL_RenderPresent(sp->sdlRenderer);
+               }else{
+                //printf("Decode Error 2.\n");
+               }
+              av_free_packet(pkt);
+           }
+       }
+       SDL_Delay(1);
+    }
+    return 0;
+}
+
+int read_audio_thread(void *opaque)
+{
+    int ret,got;
+    SimplePlayer *sp = (SimplePlayer *)opaque;
+    while(sp && !sp->exit)
+    {
+        if(!sp->pause)
+        {
+           AVPacket *pkt = get_packet(sp,0);
+           if(pkt){
+               ret = avcodec_decode_audio4(sp->aCodecCtx,sp->aFrame,&got,pkt);
+               if(ret < 0)
+               {
+                   printf("Decode audio Error.\n");
+                   //return -1;
+               }
+               if(got)
+               {
+                   swr_convert(sp->au_convert_ctx,&sp->out_buffer,MAX_AUDIO_FRAME_SIZE,(const uint8_t **)sp->aFrame->data,sp->aFrame->nb_samples);
+                   audio_chunk = (Uint8  *)sp->out_buffer;
+                   audio_len = sp->out_buffer_size;
+                   audio_pos = audio_chunk;
+                   //printf("Decode audio success.\n");
+               }else{
+                   //printf("Decode audio failed.\n");
+               }
+              av_free_packet(pkt);
+          }
+       }
+       SDL_Delay(1);
+    }
+    return 0;
+}
+//SDL end
+
 void get_dsshow_device(AVFormatContext *pFormatCtx)
 {
     AVDictionary *options = NULL;
@@ -86,8 +303,10 @@ unsigned char hk_sp[54] = {
         4,0,3,196,0,0,3,0,4,0,0,3,0,203,128,128,4,167,64,3,185,41,36,
         192,30,44,91,44,1,0,4,104,235,239,44
     };
+unsigned char hk_au[2] = {17,144};
+
 //set h264 sps&pps from cache?
-int copy_from_cache(AVStream* st){
+int copy_from_cache(AVStream* st,AVStream* at){
     unsigned char* bak;
     int size;
     //for rtmp://live.hkstv.hk.lxdns.com/live/hks
@@ -106,14 +325,26 @@ int copy_from_cache(AVStream* st){
     memcpy(st->codecpar->extradata, bak, size);
     st->codecpar->extradata_size = size;
     /***add for new API end***/
+
+    GET_ARRAY_LEN(hk_au,size);
+    bak = hk_au;
+    printf("copy_from_cache width %d\n",size);
+    at->codec->extradata = (uint8_t *)av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
+    memset(at->codec->extradata, 0, size + FF_INPUT_BUFFER_PADDING_SIZE);
+    memcpy(at->codec->extradata, bak, size);
+    at->codec->extradata_size = size;
+    /***add for new API begin***/
+    at->codecpar->extradata = (uint8_t *)av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
+    memset(at->codecpar->extradata, 0, size + FF_INPUT_BUFFER_PADDING_SIZE);
+    memcpy(at->codecpar->extradata, bak, size);
+    at->codecpar->extradata_size = size;
+    /***add for new API end***/
+
     return 1;
 }
 
 int get_video_extradata(AVFormatContext *s, int video_index)
 {
-    if(1){
-        return copy_from_cache(s->streams[video_index]);
-    }
     int  type, size;
     int ret = -1;
     //int64_t dts;
@@ -146,8 +377,10 @@ int get_video_extradata(AVFormatContext *s, int video_index)
 
         if (0 == size)
             break;
-        if (FLV_TAG_TYPE_AUDIO == type || FLV_TAG_TYPE_META == type) {
+        if (FLV_TAG_TYPE_META == type) {
             //if audio or meta tags, skip them.
+            avio_seek(s->pb, size, SEEK_CUR);
+        }else if(FLV_TAG_TYPE_AUDIO == type ){
             avio_seek(s->pb, size, SEEK_CUR);
         }else if (type == FLV_TAG_TYPE_VIDEO) {
             printf("find video flv tag success %d.\n",size);
@@ -170,7 +403,7 @@ int get_video_extradata(AVFormatContext *s, int video_index)
             s->streams[video_index]->codecpar->extradata_size = size;
             /***add for new API end***/
             ret = 0;
-            got_extradata = true;
+            //got_extradata = true;
         } else  {
             break;
         }
@@ -247,8 +480,8 @@ void init_Stream1(AVFormatContext *formatCtx, int64_t start)
     AVStream *st = formatCtx->streams[videoIndex];
     //Init the video codec(H264).
     //st->codec->codec_id = AV_CODEC_ID_H264;
-    st->codec->width = 640;
-    st->codec->height = 480;
+    st->codec->width = 480;
+    st->codec->height = 288;
     //st->codec->ticks_per_frame = 2;
     st->codec->pix_fmt = AV_PIX_FMT_YUV420P;//AV_PIX_FMT_YUV420P;
     //st->pts_wrap_bits = 32;
@@ -284,6 +517,11 @@ void init_Stream1(AVFormatContext *formatCtx, int64_t start)
     at->codec->sample_fmt = AV_SAMPLE_FMT_FLTP;
     at->codec->profile = 1;
     //at->codec->level = -99;
+
+    for(int i =0;i<at->codecpar->extradata_size;i++){
+        printf("%hhu ",at->codecpar->extradata[i]);
+    }
+    printf("\n");
 
     //at->pts_wrap_bits = 32;
     //at->time_base.den = 1000;
@@ -332,12 +570,6 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
     st->codec->sample_fmt = AV_SAMPLE_FMT_NONE;
     st->r_frame_rate.den = st->avg_frame_rate.den = 2;
     st->r_frame_rate.num = st->avg_frame_rate.num = 50;//60
-    // H264 need sps/pps for decoding, so read it from the first video tag.
-    printf("==========>begin find get_video_extradata: %0.3fs\n",(av_gettime()-start) / 1000000.0 );
-    printf("get_video_extradata ret = %d\n",get_video_extradata(formatCtx, 0));
-    printf("==========>after find get_video_extradata: %0.3fs\n",(av_gettime()-start) / 1000000.0 );
-    formatCtx->pb->buf_ptr = formatCtx->pb->buf_end;
-    formatCtx->pb->pos = (int64_t) formatCtx->pb->buf_end;
 
     /***************************** Audio ********************************/
     //Audio: aac (LC) ([10][0][0][0] / 0x000A), 44100 Hz, stereo, fltp, 128 kb/s
@@ -346,25 +578,41 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
     at->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     at->codecpar->channels = 2;
     at->codecpar->channel_layout = 3;
-    at->codecpar->bit_rate = 128000;
-    at->codecpar->sample_rate = 48000;//44100;
+    //at->codecpar->bit_rate = 128000;
+    at->codecpar->sample_rate = 48000;//44100;//44100;
+    at->codecpar->bits_per_coded_sample = 16;
+    at->codecpar->frame_size = 1024;
+    at->codecpar->format = AV_SAMPLE_FMT_FLTP;
+    at->codecpar->profile = 1;
     /*add for new API end*/
     at->codec->codec_id = AV_CODEC_ID_AAC;
     at->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    at->codec->sample_rate = 44100;
-    at->codec->time_base.den = 44100;
+    at->codec->sample_rate = 48000;//44100;
+    at->codec->time_base.den = 44100;//44100;
     at->codec->time_base.num = 1;
     at->codec->bits_per_coded_sample = 16; //
     at->codec->channels = 2;
     at->codec->channel_layout = 3;
-    at->codec->bit_rate = 128000;//128000
+    //at->codec->bit_rate = 128000;//128000
     at->codec->refs = 1;
     at->codec->sample_fmt = AV_SAMPLE_FMT_FLTP;
-    at->codec->profile = 1;
-    at->codec->level = -99;
     at->pts_wrap_bits = 32;
-    at->time_base.den = 1000;
-    at->time_base.num = 1;
+    at->codec->pkt_timebase.den = at->time_base.den = 1000;
+    at->codec->pkt_timebase.num = at->time_base.num = 1;
+    at->codec->profile = 1;
+    at->codec->frame_size = 1024;
+
+
+    // H264 need sps/pps for decoding, so read it from the first video tag.
+    printf("==========>begin find get_video_extradata: %0.3fs\n",(av_gettime()-start) / 1000000.0 );
+    if(1){
+        copy_from_cache(st,at);
+    }else{
+        printf("get_video_extradata ret = %d\n",get_video_extradata(formatCtx, 0));
+    }
+    printf("==========>after find get_video_extradata: %0.3fs\n",(av_gettime()-start) / 1000000.0 );
+    formatCtx->pb->buf_ptr = formatCtx->pb->buf_end;
+    formatCtx->pb->pos = (int64_t) formatCtx->pb->buf_end;
 }
 
 /*
@@ -375,49 +623,24 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 */
 int _tmain(int argc, char* argv[])
 {
-    AVFormatContext *pFormatCtx;
-    //Video
-    AVCodecContext *pCodecCtx;
-    AVCodec *pCodec;
-    //Audio
-    AVCodecContext *pACodecCtx;
-    AVCodec *pACodec;
+    SimplePlayer *sp = (SimplePlayer *)av_malloc(sizeof(SimplePlayer));
 
-    AVFrame *pFrame,*pFrameYUV,*pAFrame;
-    AVPacket *packet;
-    struct SwsContext *img_convert_ctx;
-    struct SwrContext *au_convert_ctx;
-
-    int y_size;
-    int ret,got_pic;
-    int i,videoIndex,audioIndex;
-    unsigned char* out_buffer;
+    int i;
     char filePath[] = "rtmp://live.hkstv.hk.lxdns.com/live/hks";//"rtmp://192.168.1.201/live/mystream";
-    //SDL begin
-    int screen_w = 0,screen_h = 0;
-    SDL_Window *screen;
-    SDL_Renderer* sdlRenderer;
-    SDL_Texture* sdlTexture;
-    SDL_Rect sdlRect;
-    SDL_Thread *play_tid;
-    SDL_Event event;
-    //add Audio
-    SDL_AudioSpec audioSpec;
-    //SDL end
 
     //------
     av_register_all();
     avdevice_register_all();
     avformat_network_init();
 
-    pFormatCtx = avformat_alloc_context();
+    sp->formatCtx = avformat_alloc_context();
+    sp->start = av_gettime();
     //try to find device from window
     //get_dsshow_device(pFormatCtx);
     //AVInputFormat *pFmt = av_find_input_format("dshow");
-    int64_t start = av_gettime();
-    printf("==========>begin avformat_open_input : %0.3fs\n",(av_gettime()-start) / 1000000.0);
+    printf("==========>begin avformat_open_input : %0.3fs\n",(av_gettime()-sp->start) / 1000000.0);
 
-    if(avformat_open_input(&pFormatCtx,filePath,NULL,NULL))
+    if(avformat_open_input(&sp->formatCtx,filePath,NULL,NULL))
         //if(avformat_open_input(&pFormatCtx,"video=e2eSoft VCam",pFmt,NULL) != 0)
     {
         printf("Couldn't open input stream.\n");
@@ -425,85 +648,90 @@ int _tmain(int argc, char* argv[])
     }
     //pFormatCtx->probesize = 4096;
 
-    printf("==========>begin find stream info 1: %0.3fs\n",(av_gettime()-start) / 1000000.0 );
+    printf("==========>begin find stream info 1: %0.3fs\n",(av_gettime()-sp->start) / 1000000.0 );
     if(1){
         //init_Stream1(pFormatCtx,start);
-        init_Stream2(pFormatCtx,start);
+        init_Stream2(sp->formatCtx,sp->start);
     }else{
-        if(avformat_find_stream_info(pFormatCtx,NULL) < 0)
+        if(avformat_find_stream_info(sp->formatCtx,NULL) < 0)
         {
             printf("Couldn't find stream information.\n");
             return -1;
         }
     }
-    printf("==========>after find stream info :%0.3fs\n",(av_gettime()-start) / 1000000.0 );
+    printf("==========>after find stream info :%0.3fs\n",(av_gettime()-sp->start) / 1000000.0 );
     //sample_aspect_ratio
     printf("----------------File Information----------------\n");
-    av_dump_format(pFormatCtx,0,filePath,0);
+    av_dump_format(sp->formatCtx,0,filePath,0);
     printf("------------------------------------------------\n");
 
-    videoIndex = audioIndex = -1;
+    sp->videoIndex = sp->audioIndex = -1;
 
-    for(i = 0; i < pFormatCtx->nb_streams; i++)
+    for(i = 0; i < sp->formatCtx->nb_streams; i++)
     {
-        if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
-            videoIndex = i;
+            sp->videoIndex = i;
             break;
         }
     }
 
-    for(i = 0; i < pFormatCtx->nb_streams; i++)
+    for(i = 0; i < sp->formatCtx->nb_streams; i++)
     {
-        if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
         {
-            audioIndex = i;
+            sp->audioIndex = i;
             break;
         }
     }
 
-    if(videoIndex == -1 || audioIndex == -1)
+    if(sp->audioIndex == -1 || sp->audioIndex == -1)
     {
         printf("Couldn't find video|audio stream.\n");
         return -1;
     }
 
-    pCodecCtx = pFormatCtx->streams[videoIndex]->codec;
-    pCodec = avcodec_find_decoder(pCodecCtx->codec_id);
-    pACodecCtx = pFormatCtx->streams[audioIndex]->codec;
-    pACodec = avcodec_find_decoder(pACodecCtx->codec_id);
+    sp->vCodecCtx = sp->formatCtx->streams[sp->videoIndex]->codec;
+    sp->vCodec = avcodec_find_decoder(sp->vCodecCtx->codec_id);
+    sp->aCodecCtx = sp->formatCtx->streams[sp->audioIndex]->codec;
+    sp->aCodec = avcodec_find_decoder(sp->aCodecCtx->codec_id);
 
-    if(pCodec == NULL)
+    //for dynamic set audio params warning
+    sp->aCodec->capabilities |= AV_CODEC_CAP_PARAM_CHANGE;
+
+    if(sp->vCodec == NULL || sp->aCodec == NULL)
     {
         printf("Codec not found.\n");
         return -1;
     }
 
-    if(avcodec_open2(pCodecCtx,pCodec,NULL)< 0 || avcodec_open2(pACodecCtx,pACodec,NULL)< 0)
+    if(avcodec_open2(sp->vCodecCtx,sp->vCodec,NULL)< 0 || avcodec_open2(sp->aCodecCtx,sp->aCodec,NULL)< 0)
     {
         printf("Could not open codec.\n");
         return -1;
     }
 
-    packet = (AVPacket *)av_malloc(sizeof(AVPacket));
-    av_init_packet(packet);
-    pFrame = av_frame_alloc();
-    pAFrame = av_frame_alloc();
+    sp->packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+    av_init_packet(sp->packet);
+    sp->vFrame = av_frame_alloc();
+    sp->vFrameYUV = av_frame_alloc();
+    sp->aFrame = av_frame_alloc();
 
-    //Video 
-    pFrameYUV = av_frame_alloc();
-    out_buffer =  (unsigned char*)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P,pCodecCtx->width,pCodecCtx->height,1));
-    av_image_fill_arrays(pFrameYUV->data,pFrameYUV->linesize,out_buffer,AV_PIX_FMT_YUV420P,pCodecCtx->width,pCodecCtx->height,1);
-    img_convert_ctx = sws_getContext(pCodecCtx->width,pCodecCtx->height,pCodecCtx->pix_fmt,
-        pCodecCtx->width,pCodecCtx->height,AV_PIX_FMT_YUV420P,SWS_BICUBIC,NULL,NULL,NULL);
+    //Out params for Video
+    sp->vFormat = AV_PIX_FMT_YUV420P;
+    sp->out_buffer = (Uint8 *)av_malloc(av_image_get_buffer_size(sp->vFormat,sp->vCodecCtx->width,sp->vCodecCtx->height,1));
+    av_image_fill_arrays(sp->vFrameYUV->data,sp->vFrameYUV->linesize,sp->out_buffer,sp->vFormat,sp->vCodecCtx->width,sp->vCodecCtx->height,1);
+    sp->img_convert_ctx = sws_getContext(sp->vCodecCtx->width,sp->vCodecCtx->height,sp->vCodecCtx->pix_fmt,
+        sp->vCodecCtx->width,sp->vCodecCtx->height,sp->vFormat,SWS_BICUBIC,NULL,NULL,NULL);
+
     //Out params for Audio
-    uint64_t out_channel_layout = AV_CH_LAYOUT_STEREO;
-    int out_nb_samples = pACodecCtx->frame_size;
-    AVSampleFormat out_sample_fmt = AV_SAMPLE_FMT_S16;
-    int out_sample_rate = 44100;
-    int out_channels = av_get_channel_layout_nb_channels(out_channel_layout);
-    int out_buffer_size = av_samples_get_buffer_size(NULL,out_channels,out_nb_samples,out_sample_fmt,1);
-    out_buffer = (uint8_t *)av_malloc(MAX_AUDIO_FRAME_SIZE*2);
+    sp->out_channel_layout = AV_CH_LAYOUT_STEREO;
+    sp->out_nb_samples = sp->aCodecCtx->frame_size;
+    sp->out_sample_fmt = AV_SAMPLE_FMT_S16;
+    sp->out_sample_rate = 44100;
+    sp->out_channels = av_get_channel_layout_nb_channels(sp->out_channel_layout);
+    sp->out_buffer_size = av_samples_get_buffer_size(NULL,sp->out_channels,sp->out_nb_samples,sp->out_sample_fmt,1);
+    sp->out_buffer = (Uint8 *)av_malloc(MAX_AUDIO_FRAME_SIZE*2);
 
     //SDL begin
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER))
@@ -512,131 +740,108 @@ int _tmain(int argc, char* argv[])
         return -1;
     }
 
-    screen_w = pCodecCtx->width;
-    screen_h = pCodecCtx->height;
-    screen = SDL_CreateWindow("Simple ffmpeg player's window",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,screen_w,screen_h,SDL_WINDOW_OPENGL);
+    sp->screen_w = sp->vCodecCtx->width;
+    sp->screen_h = sp->vCodecCtx->height;
+    sp->screen = SDL_CreateWindow("Simple ffmpeg player's window",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,sp->screen_w,sp->screen_h,SDL_WINDOW_OPENGL);
 
-    if(!screen)
+    if(!sp->screen)
     {
         printf("SDL: could not create window - exiting:%s\n",SDL_GetError());    
         return -1;
     }
 
-    sdlRenderer = SDL_CreateRenderer(screen,-1,0);
+    sp->sdlRenderer = SDL_CreateRenderer(sp->screen,-1,0);
     //IYUV: Y + U + V
     //YV12: Y + V + U
-    sdlTexture = SDL_CreateTexture(sdlRenderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,screen_w,screen_h);
-    sdlRect.x = 0;
-    sdlRect.y = 0;
-    sdlRect.w = screen_w;
-    sdlRect.h = screen_h;
+    sp->sdlTexture = SDL_CreateTexture(sp->sdlRenderer,SDL_PIXELFORMAT_IYUV,SDL_TEXTUREACCESS_STREAMING,sp->screen_w,sp->screen_h);
+    sp->sdlRect.x = 0;
+    sp->sdlRect.y = 0;
+    sp->sdlRect.w = sp->screen_w;
+    sp->sdlRect.h = sp->screen_h;
 
     //for audio
-    audioSpec.freq = out_sample_rate;
-    audioSpec.format = AUDIO_S16SYS;
-    audioSpec.channels = out_channels;
-    audioSpec.silence = 0;
-    audioSpec.samples = out_nb_samples;
-    audioSpec.callback = fill_audio;
-    audioSpec.userdata = pACodecCtx;
+    sp->audioSpec.freq = sp->out_sample_rate;
+    sp->audioSpec.format = AUDIO_S16SYS;
+    sp->audioSpec.channels = sp->out_channels;
+    sp->audioSpec.silence = 0;
+    sp->audioSpec.samples = sp->out_nb_samples;
+    sp->audioSpec.callback = fill_audio;
+    sp->audioSpec.userdata = sp->aCodecCtx;
 
-    if(SDL_OpenAudio(&audioSpec,NULL) < 0)
+    if(SDL_OpenAudio(&sp->audioSpec,NULL) < 0)
     {
         printf("cant's  open audio.\n");
         return -1;
     }
-    play_tid = SDL_CreateThread(sfp_refresh_thread,NULL,NULL);
+   
     //SDL end
 
     //FIX:Some Codec's Context Information is missing  
-    int64_t in_channel_layout=av_get_default_channel_layout(pACodecCtx->channels);  
+    int64_t in_channel_layout=av_get_default_channel_layout(sp->aCodecCtx->channels);  
     //Swr
-    au_convert_ctx = swr_alloc();
-    au_convert_ctx = swr_alloc_set_opts(au_convert_ctx,
-        out_channel_layout,out_sample_fmt,out_sample_rate,
-        in_channel_layout,pACodecCtx->sample_fmt,pACodecCtx->sample_rate
+    sp->au_convert_ctx = swr_alloc();
+    sp->au_convert_ctx = swr_alloc_set_opts(sp->au_convert_ctx,
+        sp->out_channel_layout,sp->out_sample_fmt,sp->out_sample_rate,
+        in_channel_layout,sp->aCodecCtx->sample_fmt,sp->aCodecCtx->sample_rate
         ,0,NULL);
-    swr_init(au_convert_ctx);
+    swr_init(sp->au_convert_ctx);
 
     //Play
     SDL_PauseAudio(0);
 
+    sp->exit = sp->pause = 0;
+    sp->videoPkts = (AVPacketQueue *)av_malloc(sizeof(AVPacketQueue));
+    sp->audioPkts = (AVPacketQueue *)av_malloc(sizeof(AVPacketQueue));
+    sp->videoPkts->cur = sp->audioPkts->cur = NULL;
+    sp->videoPkts->next = sp->audioPkts->next = NULL; 
+    //sp->decAudioMutex = SDL_CreateMutex();
+    sp->pktMutex = SDL_CreateMutex();
+
+    sp->decVideo = SDL_CreateThread(read_video_thread,NULL,sp);
+    sp->decAudio = SDL_CreateThread(read_audio_thread,NULL,sp);
+
+    sp->read = SDL_CreateThread(read_thread,NULL,sp);
     //EventLoop
     for(;;)
     {
         //Wait
-        SDL_WaitEvent(&event);
-        if(event.type == SFM_REFRESH_EVENT)
+        SDL_WaitEvent(&sp->event);
+        if(sp->event.type == SFM_REFRESH_EVENT)
         {
-
-            if(av_read_frame(pFormatCtx,packet) < 0)
-            {
-                thread_exit = 1;
-            }
-            if(packet->stream_index == videoIndex){
-                ret = avcodec_decode_video2(pCodecCtx,pFrame,&got_pic,packet);
-                if(ret < 0)
-                {
-                    printf("Decode Error.\n");
-                    return -1;
-                }
-                if(got_pic)
-                {
-                    sws_scale(img_convert_ctx,pFrame->data,pFrame->linesize,
-                        0,pCodecCtx->height,pFrameYUV->data,pFrameYUV->linesize);
-
-                    //SDL begin
-                    SDL_UpdateTexture(sdlTexture,NULL,pFrameYUV->data[0],pFrameYUV->linesize[0]);
-                    SDL_RenderClear(sdlRenderer);
-                    SDL_RenderCopy(sdlRenderer,sdlTexture,NULL,&sdlRect);
-                    SDL_RenderPresent(sdlRenderer);
-                }
-            }else if(packet->stream_index == audioIndex)
-            {
-                ret = avcodec_decode_audio4(pACodecCtx,pAFrame,&got_pic,packet);
-                if(ret < 0)
-                {
-                    printf("Decode audio Error.\n");
-                    return -1;
-                }
-                if(got_pic)
-                {
-                    swr_convert(au_convert_ctx,&out_buffer,MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pAFrame->data,pAFrame->nb_samples);
-                    audio_chunk = (Uint8  *)out_buffer;
-                    audio_len = out_buffer_size;
-                    audio_pos = audio_chunk;
-
-                }
-            }
-            av_free_packet(packet);
-        }else if(event.type == SDL_KEYDOWN)
+            
+        }else if(sp->event.type == SDL_KEYDOWN)
         {
             //Pause
-            if(event.key.keysym.sym == SDLK_SPACE)
+            if(sp->event.key.keysym.sym == SDLK_SPACE)
             {
-                thread_pause = !thread_pause;
+                sp->pause = !sp->pause;
             }
-        }else if(event.type == SDL_QUIT)
+        }else if(sp->event.type == SDL_QUIT)
         {
-            thread_exit = 1;
-        }else if(event.type == SFM_BREAK_EVENT)
+            sp->exit = 1;
+        }else if(sp->event.type == SFM_BREAK_EVENT)
         {
             break;
         }
     }
 
-    sws_freeContext(img_convert_ctx);
-    swr_free(&au_convert_ctx);
+    sws_freeContext(sp->img_convert_ctx);
+    swr_free(&sp->au_convert_ctx);
 
     SDL_CloseAudio();
     SDL_Quit();
 
-    av_frame_free(&pFrameYUV);
-    av_frame_free(&pFrame);
-    av_frame_free(&pAFrame);
-    avcodec_close(pCodecCtx);
-    avcodec_close(pACodecCtx);
-    avformat_close_input(&pFormatCtx);
+    av_frame_free(&sp->vFrameYUV);
+    av_frame_free(&sp->vFrame);
+    av_frame_free(&sp->aFrame);
+    avcodec_close(sp->vCodecCtx);
+    avcodec_close(sp->aCodecCtx);
+    avformat_close_input(&sp->formatCtx);
+
+    SDL_DestroyMutex(sp->pktMutex);
+    av_free(sp->videoPkts);
+    av_free(sp->audioPkts);
+    av_free(sp);
 
     return 0;
 }
