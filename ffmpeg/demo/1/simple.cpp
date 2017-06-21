@@ -454,15 +454,11 @@ int loadCfg(const char* path)
      return 0; 
 }
 
-unsigned char hk_sp[54] = {
-        1,100,0,21,255,225,0,39,103,100,0,21,172,217,1,224,150,255,192,
-        4,0,3,196,0,0,3,0,4,0,0,3,0,203,128,128,4,167,64,3,185,41,36,
-        192,30,44,91,44,1,0,4,104,235,239,44
-    };
-unsigned char hk_au[2] = {17,144};
-
 //set h264 sps&pps from cache?
 int copy_from_cache(AVStream* st,AVStream* at){
+    /**
+    * 这里要注意的是，虽然直接赋值extra可以最快速度的跳过find stream info，但是画面的显示快慢与首个I帧相关！！！
+    **/
     unsigned char* bak;
     int size;
     //for rtmp://live.hkstv.hk.lxdns.com/live/hks
@@ -698,7 +694,7 @@ void init_Stream1(AVFormatContext *formatCtx, int64_t start)
 void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 {
     /**
-    * 完全自己构建音视频流信息,次方法严重依赖第一个flv video tag的读取速度。
+    * 完全自己构建音视频流信息,此方法严重依赖第一个flv video tag的读取速度。
     * 如果想提速，可以考虑通过其它方式传输extradata信息，来实现真正优化。
     **/
     AVStream *st = avformat_new_stream(formatCtx, NULL);
@@ -790,13 +786,13 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 */
 int _tmain(int argc, char* argv[])
 {
-    loadCfg("C:\\Users\\SHI-PC\\Desktop\\hk.conf");
-
+    //loadCfg("../hk.conf");
+    loadCfg("../simple.conf");
+    
     SimplePlayer *sp = (SimplePlayer *)av_malloc(sizeof(SimplePlayer));
 
     int i;
-    //char filePath[] = "rtmp://live.hkstv.hk.lxdns.com/live/hks";//"rtmp://192.168.1.201/live/mystream";
-    //char filePath[] = "rtmp://192.168.1.201/live/mystream";
+
     //------
     av_register_all();
     avdevice_register_all();
@@ -822,8 +818,7 @@ int _tmain(int argc, char* argv[])
         //init_Stream1(sp->formatCtx,sp->start);
         init_Stream2(sp->formatCtx,sp->start);
     }else{
-        if(avformat_find_stream_info(sp->formatCtx,NULL) < 0)
-        {
+        if(avformat_find_stream_info(sp->formatCtx,NULL) < 0){
             printf("Couldn't find stream information.\n");
             return -1;
         }
@@ -836,26 +831,21 @@ int _tmain(int argc, char* argv[])
 
     sp->videoIndex = sp->audioIndex = -1;
 
-    for(i = 0; i < sp->formatCtx->nb_streams; i++)
-    {
-        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
-        {
+    for(i = 0; i < sp->formatCtx->nb_streams; i++){
+        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO){
             sp->videoIndex = i;
             break;
         }
     }
 
-    for(i = 0; i < sp->formatCtx->nb_streams; i++)
-    {
-        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
-        {
+    for(i = 0; i < sp->formatCtx->nb_streams; i++){
+        if(sp->formatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO){
             sp->audioIndex = i;
             break;
         }
     }
 
-    if(sp->audioIndex == -1 || sp->audioIndex == -1)
-    {
+    if(sp->audioIndex == -1 || sp->audioIndex == -1){
         printf("Couldn't find video|audio stream.\n");
         return -1;
     }
@@ -868,14 +858,12 @@ int _tmain(int argc, char* argv[])
     //for dynamic set audio params warning
     sp->aCodec->capabilities |= AV_CODEC_CAP_PARAM_CHANGE;
 
-    if(sp->vCodec == NULL || sp->aCodec == NULL)
-    {
+    if(sp->vCodec == NULL || sp->aCodec == NULL){
         printf("Codec not found.\n");
         return -1;
     }
 
-    if(avcodec_open2(sp->vCodecCtx,sp->vCodec,NULL)< 0 || avcodec_open2(sp->aCodecCtx,sp->aCodec,NULL)< 0)
-    {
+    if(avcodec_open2(sp->vCodecCtx,sp->vCodec,NULL)< 0 || avcodec_open2(sp->aCodecCtx,sp->aCodec,NULL)< 0){
         printf("Could not open codec.\n");
         return -1;
     }
@@ -903,8 +891,7 @@ int _tmain(int argc, char* argv[])
     sp->out_buffer = (Uint8 *)av_malloc(MAX_AUDIO_FRAME_SIZE*2);
 
     //SDL begin
-    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER))
-    {
+    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)){
         printf("Could not initialize SDL - %s\n",SDL_GetError());
         return -1;
     }
@@ -913,8 +900,7 @@ int _tmain(int argc, char* argv[])
     sp->screen_h = sp->vCodecCtx->height;
     sp->screen = SDL_CreateWindow("Simple ffmpeg player's window",SDL_WINDOWPOS_UNDEFINED,SDL_WINDOWPOS_UNDEFINED,sp->screen_w,sp->screen_h,SDL_WINDOW_OPENGL);
 
-    if(!sp->screen)
-    {
+    if(!sp->screen){
         printf("SDL: could not create window - exiting:%s\n",SDL_GetError());    
         return -1;
     }
@@ -937,8 +923,7 @@ int _tmain(int argc, char* argv[])
     sp->audioSpec.callback = fill_audio;
     sp->audioSpec.userdata = sp->aCodecCtx;
 
-    if(SDL_OpenAudio(&sp->audioSpec,NULL) < 0)
-    {
+    if(SDL_OpenAudio(&sp->audioSpec,NULL) < 0){
         printf("cant's  open audio.\n");
         return -1;
     }
@@ -971,25 +956,19 @@ int _tmain(int argc, char* argv[])
 
     sp->read = SDL_CreateThread(read_thread,NULL,sp);
     //EventLoop
-    for(;;)
-    {
+    for(;;){
         //Wait
         SDL_WaitEvent(&sp->event);
-        if(sp->event.type == SFM_REFRESH_EVENT)
-        {
+        if(sp->event.type == SFM_REFRESH_EVENT){
             
-        }else if(sp->event.type == SDL_KEYDOWN)
-        {
+        }else if(sp->event.type == SDL_KEYDOWN){
             //Pause
-            if(sp->event.key.keysym.sym == SDLK_SPACE)
-            {
+            if(sp->event.key.keysym.sym == SDLK_SPACE){
                 sp->pause = !sp->pause;
             }
-        }else if(sp->event.type == SDL_QUIT)
-        {
+        }else if(sp->event.type == SDL_QUIT){
             sp->exit = 1;
-        }else if(sp->event.type == SFM_BREAK_EVENT)
-        {
+        }else if(sp->event.type == SFM_BREAK_EVENT){
             break;
         }
     }
