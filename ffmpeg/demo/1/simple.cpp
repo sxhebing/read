@@ -27,6 +27,39 @@ extern "C"
 #define GET_ARRAY_LEN(array,len) {len = (sizeof(array) / sizeof(array[0]));}
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
 
+char* url;
+
+typedef struct _DecodeParams{
+    unsigned char *extra;
+    int extra_size;
+    AVCodecID code_id;
+    int format;
+    int profile;
+    int level;
+    AVRational stream_time_base;
+    AVRational codec_time_base;
+    int pts_wrap_bits;
+
+    //for video
+    AVFieldOrder field_order;
+    int qmin;
+    int qmax;
+    int width;
+    int height;
+    AVRational aspect;
+    AVRational r_frame_rate;
+    AVRational avg_frame_rate;
+
+    //for audio
+    int channels;
+    int channel_layout;
+    int sample_rate;
+    int bits_per_coded_sample;
+    int frame_size;
+    AVRational pkt_timebase;
+
+}DecodeParams;
+
 typedef struct _AVPacketQueue{
     AVPacket *cur;
     struct _AVPacketQueue *next;
@@ -112,6 +145,7 @@ typedef struct SimplePlayer{
 static Uint8 *audio_chunk;
 static Uint32 audio_len;
 static Uint8 *audio_pos;
+static DecodeParams *videoParams,*audioParams;
 /* The audio function callback takes the following parameters:  
 * stream: A pointer to the audio buffer to be filled  
 * len: The length (in bytes) of the audio buffer  
@@ -227,6 +261,9 @@ int read_video_thread(void *opaque)
                }
                if(got)
                {
+                   /*if(sp->vFrame->key_frame){
+                       printf("Get I Frame!\n");
+                   }*/
                    sws_scale(sp->img_convert_ctx,sp->vFrame->data,sp->vFrame->linesize,
                        0,sp->vCodecCtx->height,sp->vFrameYUV->data,sp->vFrameYUV->linesize);
 
@@ -298,6 +335,125 @@ enum {
     FLV_TAG_TYPE_META  = 0x12,
 };
 
+ 
+int loadCfg(const char* path) 
+ { 
+     FILE *fp; 
+     char line[1024];             //每行最大读取的字符数
+     if((fp = fopen(path,"r")) == NULL) //判断文件是否存在及可读
+     { 
+         printf("read cfg error!"); 
+         return -1; 
+     } 
+
+     DecodeParams *tag;
+     while (!feof(fp)) 
+     { 
+         fgets(line,1024,fp);  //读取一行
+         if(strncmp("#",line,1) == 0){
+            //ignore
+         }else if(strncmp("[url]",line,5) == 0){
+             //find url
+         }else if(strncmp("path=",line,5) == 0){
+             url = av_strdup(line + 5);
+             int len = strlen(url);
+             //importmant for read from file!
+             url[len-1] = '\0';
+             printf("find url %d %s \n",len,url);
+         }else if(strncmp("[video]",line,7) == 0){
+            //find video tag
+            //printf("find video tag.\n");
+            tag = videoParams = (DecodeParams *)av_malloc(sizeof(DecodeParams));
+         }else if(strncmp("[audio]",line,7) == 0){
+            //find audio tag
+            //printf("find audio tag.\n");
+            tag = audioParams = (DecodeParams *)av_malloc(sizeof(DecodeParams));
+         }else{
+             if(strncmp("extra=",line,6) == 0){
+                 char* tok = ",";
+                 char* sub = strtok(line + 6,tok);
+                 unsigned char tmp[256];
+                 int size = 0;
+                 while(sub != NULL){
+                     //printf("%s ",sub);
+                     tmp[size++] = atoi(sub);
+                     sub = strtok(NULL,tok);
+                 }
+                 tag->extra = (unsigned char *)av_malloc(sizeof(unsigned char) * size);
+                 for(int i=0; i < size; i++){
+                    tag->extra[i] = tmp[i];
+                    //printf("%hhu ",tag->extra[i]);
+                 }
+                 tag->extra_size = size;
+             }else if(strncmp("code_id=",line,8) == 0){
+                 tag->code_id = (AVCodecID)atoi(line + 8);
+             }else if(strncmp("format=",line,7) == 0){
+                 tag->format = atoi(line + 7);
+             }else if(strncmp("field_order=",line,12) == 0){
+                 tag->field_order = (AVFieldOrder)atoi(line + 12);
+             }else if(strncmp("profile=",line,8) == 0){
+                 tag->profile = atoi(line + 8);
+             }else if(strncmp("level=",line,6) == 0){
+                 tag->level = atoi(line + 6);
+             }else if(strncmp("pts_wrap_bits=",line,14) == 0){
+                 tag->pts_wrap_bits = atoi(line + 14);
+             
+             }else if(strncmp("qmin=",line,5) == 0){
+                 tag->qmin = atoi(line + 5);
+             }else if(strncmp("qmax=",line,5) == 0){
+                 tag->qmax = atoi(line + 5);
+             }else if(strncmp("width=",line,6) == 0){
+                 tag->width = atoi(line + 6);
+             }else if(strncmp("height=",line,7) == 0){
+                 tag->height = atoi(line + 7);
+
+             }else if(strncmp("aspect_num=",line,11) == 0){
+                 tag->aspect.num = atoi(line + 11);
+             }else if(strncmp("aspect_den=",line,11) == 0){
+                 tag->aspect.den = atoi(line + 11);
+
+             }else if(strncmp("stream_time_base_num=",line,21) == 0){
+                 tag->stream_time_base.num = atoi(line + 21);
+             }else if(strncmp("stream_time_base_den=",line,21) == 0){
+                 tag->stream_time_base.den = atoi(line + 21);
+
+             }else if(strncmp("codec_time_base_num=",line,20) == 0){
+                 tag->codec_time_base.num = atoi(line + 20);
+             }else if(strncmp("codec_time_base_den=",line,20) == 0){
+                 tag->codec_time_base.den = atoi(line + 20);
+
+             }else if(strncmp("r_frame_rate_num=",line,17) == 0){
+                 tag->r_frame_rate.num = atoi(line + 17);
+             }else if(strncmp("r_frame_rate_den=",line,17) == 0){
+                 tag->r_frame_rate.den = atoi(line + 17);
+
+             }else if(strncmp("avg_frame_rate_num=",line,19) == 0){
+                 tag->avg_frame_rate.num = atoi(line + 19);
+             }else if(strncmp("avg_frame_rate_den=",line,19) == 0){
+                 tag->avg_frame_rate.den = atoi(line + 19);
+
+             }else if(strncmp("channels=",line,9) == 0){
+                 tag->channels = atoi(line + 9);
+             }else if(strncmp("channel_layout=",line,15) == 0){
+                 tag->channel_layout = atoi(line + 15);
+             }else if(strncmp("sample_rate=",line,12) == 0){
+                 tag->sample_rate = atoi(line + 12);
+             }else if(strncmp("bits_per_coded_sample=",line,22) == 0){
+                 tag->bits_per_coded_sample = atoi(line + 22);
+             }else if(strncmp("frame_size=",line,11) == 0){
+                 tag->frame_size = atoi(line + 11);
+
+             }else if(strncmp("pkt_timebase_num=",line,17) == 0){
+                 tag->pkt_timebase.num = atoi(line + 17);
+             }else if(strncmp("pkt_timebase_den=",line,17) == 0){
+                 tag->pkt_timebase.den = atoi(line + 17);
+             }
+         }
+     } 
+     fclose(fp);                     //关闭文件
+     return 0; 
+}
+
 unsigned char hk_sp[54] = {
         1,100,0,21,255,225,0,39,103,100,0,21,172,217,1,224,150,255,192,
         4,0,3,196,0,0,3,0,4,0,0,3,0,203,128,128,4,167,64,3,185,41,36,
@@ -310,9 +466,11 @@ int copy_from_cache(AVStream* st,AVStream* at){
     unsigned char* bak;
     int size;
     //for rtmp://live.hkstv.hk.lxdns.com/live/hks
-    GET_ARRAY_LEN(hk_sp,size);
-    bak = hk_sp;
-
+    //GET_ARRAY_LEN(hk_sp,size);
+    //bak = hk_sp;
+    GET_ARRAY_LEN(videoParams->extra,size);
+    bak = videoParams->extra;
+    size = videoParams->extra_size;
     printf("copy_from_cache width %d\n",size);
 
     st->codec->extradata = (uint8_t *)av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
@@ -326,8 +484,12 @@ int copy_from_cache(AVStream* st,AVStream* at){
     st->codecpar->extradata_size = size;
     /***add for new API end***/
 
-    GET_ARRAY_LEN(hk_au,size);
-    bak = hk_au;
+    //GET_ARRAY_LEN(hk_au,size);
+    //bak = hk_au;
+    GET_ARRAY_LEN(audioParams->extra,size);
+    bak = audioParams->extra;
+    size = audioParams->extra_size;
+
     printf("copy_from_cache width %d\n",size);
     at->codec->extradata = (uint8_t *)av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
     memset(at->codec->extradata, 0, size + FF_INPUT_BUFFER_PADDING_SIZE);
@@ -480,8 +642,8 @@ void init_Stream1(AVFormatContext *formatCtx, int64_t start)
     AVStream *st = formatCtx->streams[videoIndex];
     //Init the video codec(H264).
     //st->codec->codec_id = AV_CODEC_ID_H264;
-    st->codec->width = 480;
-    st->codec->height = 288;
+    st->codec->width = 640;//480;
+    st->codec->height = 480;//288;
     //st->codec->ticks_per_frame = 2;
     st->codec->pix_fmt = AV_PIX_FMT_YUV420P;//AV_PIX_FMT_YUV420P;
     //st->pts_wrap_bits = 32;
@@ -518,6 +680,11 @@ void init_Stream1(AVFormatContext *formatCtx, int64_t start)
     at->codec->profile = 1;
     //at->codec->level = -99;
 
+    for(int i =0;i<st->codecpar->extradata_size;i++){
+        printf("%hhu,",st->codecpar->extradata[i]);
+    }
+    printf("\n");
+
     for(int i =0;i<at->codecpar->extradata_size;i++){
         printf("%hhu ",at->codecpar->extradata[i]);
     }
@@ -542,65 +709,65 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
     //h264 (libx264) ([7][0][0][0] / 0x0007), yuv420p(progressive), 640x480, q=-1--1, 59 fps, 1k tbn, 59 tbc
     //h264 (High), yuv420p(progressive), 480x288 [SAR 16:15 DAR 16:9], 25 fps, 25 tbr, 1k tbn, 50 tbc
     /*add for new API begin*/
-    st->codecpar->codec_id = AV_CODEC_ID_H264;
+    st->codecpar->codec_id = videoParams->code_id;
     st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->format = AV_PIX_FMT_YUV420P;
-    st->codecpar->field_order = AV_FIELD_PROGRESSIVE;//(progressive)
-    st->sample_aspect_ratio.num = st->codecpar->sample_aspect_ratio.num = 16;
-    st->sample_aspect_ratio.den = st->codecpar->sample_aspect_ratio.den = 15;
-    st->codecpar->profile = 100;
-    st->codecpar->level = 21;
+    st->codecpar->format = videoParams->format;
+    st->codecpar->field_order = videoParams->field_order;//(progressive)
+    st->sample_aspect_ratio.num = st->codecpar->sample_aspect_ratio.num = videoParams->aspect.num;
+    st->sample_aspect_ratio.den = st->codecpar->sample_aspect_ratio.den = videoParams->aspect.den;
+    st->codecpar->profile = videoParams->profile;
+    st->codecpar->level = videoParams->level;
     //st->codecpar->video_delay = 2;
     //st->codecpar->bits_per_raw_sample = 8;
     /*add for new API end*/
-    st->codec->codec_id = AV_CODEC_ID_H264;
+    st->codec->codec_id = videoParams->code_id;
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     //extra begin
-    st->codec->qmin = 2;
-    st->codec->qmax = 31;
+    st->codec->qmin = videoParams->qmin;
+    st->codec->qmax = videoParams->qmax;
     //extra end
-    st->codec->width = 480;//640;
-    st->codec->height = 288;//480;
-    st->codec->ticks_per_frame = 1;
-    st->codec->pix_fmt = AV_PIX_FMT_YUV420P;//AV_PIX_FMT_YUV420P;
-    st->pts_wrap_bits = 32;
-    st->codec->time_base.den = 50;//
-     st->time_base.den = 1000;//
-    st->codec->time_base.num = st->time_base.num = 1;
-    st->codec->sample_fmt = AV_SAMPLE_FMT_NONE;
-    st->r_frame_rate.den = st->avg_frame_rate.den = 2;
-    st->r_frame_rate.num = st->avg_frame_rate.num = 50;//60
+    st->codec->width = videoParams->width;//640;
+    st->codec->height = videoParams->height;//480;
+    //st->codec->ticks_per_frame = 1;
+    st->codec->pix_fmt = (AVPixelFormat)videoParams->format;//AV_PIX_FMT_YUV420P;
+    st->pts_wrap_bits = videoParams->pts_wrap_bits;
+    st->codec->time_base.den = videoParams->codec_time_base.den;//60
+    st->time_base.den = videoParams->stream_time_base.den;//
+    st->codec->time_base.num = st->time_base.num = videoParams->stream_time_base.num;
+    //st->codec->sample_fmt = AV_SAMPLE_FMT_NONE;
+    st->r_frame_rate.den = st->avg_frame_rate.den = videoParams->avg_frame_rate.den;
+    st->r_frame_rate.num = st->avg_frame_rate.num = videoParams->avg_frame_rate.num;//60
 
     /***************************** Audio ********************************/
     //Audio: aac (LC) ([10][0][0][0] / 0x000A), 44100 Hz, stereo, fltp, 128 kb/s
     /*add for new API begin*/
-    at->codecpar->codec_id = AV_CODEC_ID_AAC;
+    at->codecpar->codec_id = audioParams->code_id;
     at->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-    at->codecpar->channels = 2;
-    at->codecpar->channel_layout = 3;
+    at->codecpar->channels = audioParams->channels;
+    at->codecpar->channel_layout = audioParams->channel_layout;
     //at->codecpar->bit_rate = 128000;
-    at->codecpar->sample_rate = 48000;//44100;//44100;
-    at->codecpar->bits_per_coded_sample = 16;
-    at->codecpar->frame_size = 1024;
-    at->codecpar->format = AV_SAMPLE_FMT_FLTP;
-    at->codecpar->profile = 1;
+    at->codecpar->sample_rate = audioParams->sample_rate;//44100;//44100;
+    at->codecpar->bits_per_coded_sample = audioParams->bits_per_coded_sample;
+    at->codecpar->frame_size = audioParams->frame_size;
+    at->codecpar->format = audioParams->format;
+    at->codecpar->profile = audioParams->profile;
     /*add for new API end*/
-    at->codec->codec_id = AV_CODEC_ID_AAC;
+    at->codec->codec_id = audioParams->code_id;
     at->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    at->codec->sample_rate = 48000;//44100;
-    at->codec->time_base.den = 44100;//44100;
-    at->codec->time_base.num = 1;
-    at->codec->bits_per_coded_sample = 16; //
-    at->codec->channels = 2;
-    at->codec->channel_layout = 3;
+    at->codec->sample_rate = audioParams->sample_rate;//44100;
+    at->codec->time_base.den = audioParams->codec_time_base.den;//44100;
+    at->codec->time_base.num = audioParams->codec_time_base.num;
+    at->codec->bits_per_coded_sample = audioParams->bits_per_coded_sample; //
+    at->codec->channels = audioParams->channels;
+    at->codec->channel_layout = audioParams->channel_layout;
     //at->codec->bit_rate = 128000;//128000
-    at->codec->refs = 1;
-    at->codec->sample_fmt = AV_SAMPLE_FMT_FLTP;
-    at->pts_wrap_bits = 32;
-    at->codec->pkt_timebase.den = at->time_base.den = 1000;
-    at->codec->pkt_timebase.num = at->time_base.num = 1;
-    at->codec->profile = 1;
-    at->codec->frame_size = 1024;
+    //at->codec->refs = 1;
+    at->codec->sample_fmt = (AVSampleFormat)audioParams->format;
+    at->pts_wrap_bits = audioParams->pts_wrap_bits;
+    at->codec->pkt_timebase.den = at->time_base.den = audioParams->stream_time_base.den;
+    at->codec->pkt_timebase.num = at->time_base.num = audioParams->stream_time_base.num;
+    at->codec->profile = audioParams->profile;
+    at->codec->frame_size = audioParams->frame_size;
 
 
     // H264 need sps/pps for decoding, so read it from the first video tag.
@@ -623,11 +790,13 @@ void init_Stream2(AVFormatContext *formatCtx, int64_t start)
 */
 int _tmain(int argc, char* argv[])
 {
+    loadCfg("C:\\Users\\SHI-PC\\Desktop\\hk.conf");
+
     SimplePlayer *sp = (SimplePlayer *)av_malloc(sizeof(SimplePlayer));
 
     int i;
-    char filePath[] = "rtmp://live.hkstv.hk.lxdns.com/live/hks";//"rtmp://192.168.1.201/live/mystream";
-
+    //char filePath[] = "rtmp://live.hkstv.hk.lxdns.com/live/hks";//"rtmp://192.168.1.201/live/mystream";
+    //char filePath[] = "rtmp://192.168.1.201/live/mystream";
     //------
     av_register_all();
     avdevice_register_all();
@@ -640,7 +809,7 @@ int _tmain(int argc, char* argv[])
     //AVInputFormat *pFmt = av_find_input_format("dshow");
     printf("==========>begin avformat_open_input : %0.3fs\n",(av_gettime()-sp->start) / 1000000.0);
 
-    if(avformat_open_input(&sp->formatCtx,filePath,NULL,NULL))
+    if(avformat_open_input(&sp->formatCtx,url,NULL,NULL))
         //if(avformat_open_input(&pFormatCtx,"video=e2eSoft VCam",pFmt,NULL) != 0)
     {
         printf("Couldn't open input stream.\n");
@@ -650,7 +819,7 @@ int _tmain(int argc, char* argv[])
 
     printf("==========>begin find stream info 1: %0.3fs\n",(av_gettime()-sp->start) / 1000000.0 );
     if(1){
-        //init_Stream1(pFormatCtx,start);
+        //init_Stream1(sp->formatCtx,sp->start);
         init_Stream2(sp->formatCtx,sp->start);
     }else{
         if(avformat_find_stream_info(sp->formatCtx,NULL) < 0)
@@ -662,7 +831,7 @@ int _tmain(int argc, char* argv[])
     printf("==========>after find stream info :%0.3fs\n",(av_gettime()-sp->start) / 1000000.0 );
     //sample_aspect_ratio
     printf("----------------File Information----------------\n");
-    av_dump_format(sp->formatCtx,0,filePath,0);
+    av_dump_format(sp->formatCtx,0,url,0);
     printf("------------------------------------------------\n");
 
     sp->videoIndex = sp->audioIndex = -1;
@@ -842,6 +1011,16 @@ int _tmain(int argc, char* argv[])
     av_free(sp->videoPkts);
     av_free(sp->audioPkts);
     av_free(sp);
+
+    if(videoParams){
+        av_free(videoParams->extra);
+        av_free(videoParams);
+    }
+
+    if(audioParams){
+        av_free(audioParams->extra);
+        av_free(audioParams);
+    }
 
     return 0;
 }
