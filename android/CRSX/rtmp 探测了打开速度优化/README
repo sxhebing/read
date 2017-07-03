@@ -1,9 +1,17 @@
-ijkplayer »ùÓÚ×îĞÂµÄmaster°æ±¾±àÒë£¬¾ßÌå±àÒë·½Ê½¿ÉÒÔ²é¿´
+ijkplayer åŸºäºæœ€æ–°çš„masterç‰ˆæœ¬ç¼–è¯‘ï¼Œå…·ä½“ç¼–è¯‘æ–¹å¼å¯ä»¥æŸ¥çœ‹
 		
 		https://github.com/Bilibili/ijkplayer
 		
-source-jni£ºÎª¶ÔÓ¦µÄÔ´ÂëĞŞ¸ÄµÄÏà¹Ø²¿·Ö£¬Ö÷ÒªÉæ¼°¶ş¸ö¹¦ÄÜ£º
-1. ÍøÂçÑÓÊ±Ê±£¬¶ª°ü´¦Àí
-2. Ì½²ârtmpÁ÷Ê±£¬ËÙ¶ÈÓÅ»¯
+source-jniï¼šä¸ºå¯¹åº”çš„æºç ä¿®æ”¹çš„ç›¸å…³éƒ¨åˆ†ï¼Œä¸»è¦æ¶‰åŠäºŒä¸ªåŠŸèƒ½ï¼š
+1. ç½‘ç»œå»¶æ—¶æ—¶ï¼Œä¸¢åŒ…å¤„ç†
+2. æ¢æµ‹rtmpæµæ—¶ï¼Œé€Ÿåº¦ä¼˜åŒ–
 
-ijkplayer£º¶ÔÓ¦android²¿·ÖµÄjavaÏà¹Ø´úÂë£¬Ö÷ÒªÉæ¼°rtmpÁ÷´ò¿ªÓÅ»¯¡£
+ijkplayerï¼šå¯¹åº”androidéƒ¨åˆ†çš„javaç›¸å…³ä»£ç ï¼Œä¸»è¦æ¶‰åŠrtmpæµæ‰“å¼€ä¼˜åŒ–ã€‚
+
+ç›®å‰æµ‹è¯•äº†å±€åŸŸç½‘çš„rtmpæœåŠ¡å™¨ä»¥åŠä¸€ä¸ªå¤–ç½‘rtmpæµï¼š
+
+æœ¬åœ°
+ffmpeg -f dshow -i audio="FrontMic (Realtek High Definition Audio)" -f gdigrab -video_size 640x480 -i desktop  -vcodec libx264 -codec:a aac -pix_fmt yuv420p -tune zerolatency -preset ultrafast -f flv rtmp://192.168.1.201/live/mystream
+
+å¤–ç½‘
+rtmp://live.hkstv.hk.lxdns.com/live/hks
