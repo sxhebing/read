@@ -1,0 +1,9 @@
+ijkplayer 基于最新的master版本编译，具体编译方式可以查看
+		
+		https://github.com/Bilibili/ijkplayer
+		
+source-jni：为对应的源码修改的相关部分，主要涉及二个功能：
+1. 网络延时时，丢包处理
+2. 探测rtmp流时，速度优化
+
+ijkplayer：对应android部分的java相关代码，主要涉及rtmp流打开优化。
