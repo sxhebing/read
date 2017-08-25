@@ -6,3 +6,5 @@ http://androidxref.com
 
 [仿微信、QQ类聊天图片消息不规则的图片效果](https://github.com/sxhebing/read/blob/master/android/DHZN/MessageImage.java)
 
+[jcenter上传工具](https://github.com/novoda/bintray-release)
+
