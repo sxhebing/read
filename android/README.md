@@ -10,3 +10,5 @@ http://androidxref.com
 
 [2017-9-11 非原创记录 自定义View文字居中绘制](https://github.com/sxhebing/read/blob/master/android/DHZN/Draw.java)
 
+[转应用修改包名&签名](http://www.cnblogs.com/tianxiaozz/archive/2012/12/26/change_apk_package_name.html)
+
