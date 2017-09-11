@@ -8,3 +8,5 @@ http://androidxref.com
 
 [jcenter上传工具](https://github.com/novoda/bintray-release)
 
+[2017-9-11 非原创记录 自定义View文字居中绘制](https://github.com/sxhebing/read/blob/master/android/DHZN/Draw.java)
+
