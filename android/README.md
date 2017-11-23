@@ -1,7 +1,7 @@
 ## Android 源码 
 http://androidxref.com
 ## NLP 
-https://github.com/crownpku/awesome-chinese-nlp#chinese-word-segment-%E4%B8%AD%E6%96%87%E5%88%86%E8%AF%8D-1
+https://github.com/crownpku/awesome-chinese-nlp
 ### 工具类 
 [基于 Glide 用户头像显示，仿钉钉效果](https://github.com/sxhebing/read/blob/master/android/DHZN/CustomImageView.java)
 
