@@ -8,8 +8,10 @@
         }
 ```
 3.Android 8.0开始，启动后台服务也有变化具体为：
+```
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent);
         } else {
             startService(serviceIntent);
         }
+```
