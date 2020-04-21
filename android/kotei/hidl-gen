@@ -1,0 +1,8 @@
+根据HIDL生成BP
+out/host/linux-x86/bin/hidl-gen -Landroidbp -randroid.gac:product/gac/hardware/interfaces/ -randroid.hidl:system/libhidl/transport android.gac.audioswitch@1.0 -o .
+
+根据HIDL生成C++实现
+out/host/linux-x86/bin/hidl-gen -o product/gac/hardware/interfaces/audioswitch/1.0/service/  -Lc++-impl -randroid.gac:product/gac/hardware/interfaces/ -randroid.hidl:system/libhidl/transport android.gac.audioswitch@1.0
+
+生成C++实现BP
+out/host/linux-x86/bin/hidl-gen -o product/gac/hardware/interfaces/audioswitch/1.0/service/  -Landroidbp-impl -randroid.gac:product/gac/hardware/interfaces/ -randroid.hidl:system/libhidl/transport android.gac.audioswitch@1.0
